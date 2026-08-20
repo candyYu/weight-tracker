@@ -26,7 +26,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: rm -f ~/.npmrc /etc/npmrc ./.npmrc 2>/dev/null; npm config delete registry -L user 2>/dev/null; npm config delete //registry.npmjs.org/:_authToken -L user 2>/dev/null; npm install --legacy-peer-deps --no-audit --no-fund
+      - run: npm install --legacy-peer-deps --no-audit --no-fund --registry=https://registry.npmjs.org/
       - run: npx vite build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
