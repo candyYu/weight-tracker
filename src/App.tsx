@@ -6,15 +6,15 @@ import WeightPage from './components/WeightPage'
 import MealPage from './components/MealPage'
 import PlanPage from './components/PlanPage'
 import SettingsPage from './components/SettingsPage'
+import TrainingPage from './components/TrainingPage'
 import { ensureNotificationPermission } from './notify'
 
-type Tab = 'home' | 'weight' | 'meal' | 'plan' | 'me'
+type Tab = 'home' | 'weight' | 'meal' | 'plan' | 'train' | 'me'
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('home')
   const profile = useLiveQuery(() => db.profile.get('me'))
 
-  // 首次打开请求通知权限
   if (profile && 'Notification' in window && Notification.permission === 'default') {
     ensureNotificationPermission()
   }
@@ -30,6 +30,7 @@ export default function App() {
       {tab === 'weight' && <WeightPage />}
       {tab === 'meal' && <MealPage />}
       {tab === 'plan' && <PlanPage />}
+      {tab === 'train' && <TrainingPage />}
       {tab === 'me' && <SettingsPage />}
 
       <nav className="tabs">
@@ -41,6 +42,9 @@ export default function App() {
         </button>
         <button className={`tab ${tab === 'meal' ? 'active' : ''}`} onClick={() => setTab('meal')}>
           <span className="ico">🍱</span>饮食
+        </button>
+        <button className={`tab ${tab === 'train' ? 'active' : ''}`} onClick={() => setTab('train')}>
+          <span className="ico">🏋️</span>训练
         </button>
         <button className={`tab ${tab === 'plan' ? 'active' : ''}`} onClick={() => setTab('plan')}>
           <span className="ico">📊</span>方案

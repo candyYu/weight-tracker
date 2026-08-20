@@ -3,9 +3,10 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { startReminderLoop } from '../notify'
+import { getTodayPlan, getTodayKcal, type Level } from '../trainingPlan'
 
 interface Props {
-  onJump?: (t: 'weight' | 'meal' | 'plan') => void
+  onJump?: (t: 'weight' | 'meal' | 'plan' | 'train') => void
 }
 
 export default function Dashboard({ onJump }: Props) {
@@ -15,6 +16,11 @@ export default function Dashboard({ onJump }: Props) {
     return db.meals.where('date').equals(today).toArray()
   }, []) ?? []
   const profile = useLiveQuery(() => db.profile.get('me'))
+  const today_ = new Date().toISOString().slice(0, 10)
+  const todayWorkouts = useLiveQuery(
+    () => db.workouts.where('date').equals(today_).toArray(),
+    [today_]
+  ) ?? []
 
   const [showOnboard, setShowOnboard] = useState(false)
 
@@ -35,16 +41,20 @@ export default function Dashboard({ onJump }: Props) {
   const prev = weights[weights.length - 2]
   const delta = last && prev ? last.weight - prev.weight : 0
 
-  // 距上次称重天数
   const daysSince = last
     ? Math.floor((Date.now() - new Date(last.date).getTime()) / 86400000)
     : null
   const needRemind = daysSince === null || daysSince >= 6
 
-  // 今日总热量
   const todayKcal = todayMeals.reduce((s, m) => s + m.totalKcal, 0)
 
-  // 30 天体重曲线数据
+  // 训练卡片
+  const level: Level = (profile.level as Level) || 'intermediate'
+  const todayPlan = getTodayPlan(level)
+  const planKcal = getTodayKcal(todayPlan)
+  const burnedKcal = todayWorkouts.reduce((s, w) => s + w.kcalBurned, 0)
+  const trainingDone = todayPlan.exercises.length > 0 && todayWorkouts.length >= todayPlan.exercises.length
+
   const chartData = weights.slice(-30).map(w => ({
     date: w.date.slice(5),
     weight: w.weight,
@@ -99,6 +109,31 @@ export default function Dashboard({ onJump }: Props) {
           </button>
         )}
       </div>
+
+      {todayPlan.type !== 'rest' && (
+        <div className="card" style={{ background: trainingDone ? '#E8F5E9' : 'linear-gradient(135deg, #FFF0F5 0%, #FFE0EC 100%)' }}>
+          <h2>🏋️ 今日训练</h2>
+          <div style={{ fontSize: 14, fontWeight: 500, margin: '4px 0' }}>{todayPlan.title}</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+            ⏱ {todayPlan.durationMin} 分钟 · 🔥 预计 {planKcal} kcal
+          </div>
+          <div style={{
+            marginTop: 10,
+            background: 'rgba(255,255,255,0.6)',
+            borderRadius: 8,
+            padding: '6px 10px',
+            fontSize: 13,
+          }}>
+            {trainingDone
+              ? <>✓ 今日训练已完成, 消耗 {burnedKcal} kcal</>
+              : <>已完成 {todayWorkouts.length} / {todayPlan.exercises.length} 项</>
+            }
+          </div>
+          <button className="btn" style={{ marginTop: 12 }} onClick={() => onJump?.('train')}>
+            {trainingDone ? '查看训练' : '开始训练'}
+          </button>
+        </div>
+      )}
 
       <div className="card">
         <h2>今日饮食</h2>
