@@ -123,16 +123,24 @@ function OcrModal({ onClose }: { onClose: () => void }) {
   async function handleFile(file: File) {
     const url = URL.createObjectURL(file)
     setImgUrl(url)
+    const startTime = Date.now()
+    const tick = () => {
+      const sec = Math.floor((Date.now() - startTime) / 1000)
+      setProgressLabel(prev => prev.includes('%') ? prev : `${prev} · 已用 ${sec}s`)
+    }
+    const timer = setInterval(tick, 500)
     setProgressLabel('加载识别引擎...')
     setProgress(0)
     try {
       const { createWorker } = await import('tesseract.js')
       const worker = await createWorker(['chi_sim', 'eng'], 1, {
         logger: m => {
+          tick()
           if (m.status === 'recognizing text') {
             const p = Math.round(m.progress * 100)
             setProgress(p)
-            setProgressLabel(`识别中 ${p}%`)
+            const sec = Math.floor((Date.now() - startTime) / 1000)
+            setProgressLabel(`识别中 ${p}% · 已用 ${sec}s`)
           } else {
             setProgressLabel(translateStatus(m.status))
           }
@@ -140,11 +148,13 @@ function OcrModal({ onClose }: { onClose: () => void }) {
       })
       setProgressLabel('识别中...')
       const { data } = await worker.recognize(url)
+      clearInterval(timer)
       await worker.terminate()
       const text = (data.text || '').trim()
       setManualText(text)
       parseText(text)
     } catch (err) {
+      clearInterval(timer)
       setProgressLabel('识别失败: ' + (err as Error).message)
     }
   }
