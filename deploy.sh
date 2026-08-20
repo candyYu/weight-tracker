@@ -5,6 +5,9 @@ npm install --legacy-peer-deps --no-audit --no-fund
 npx vite build
 git checkout --orphan gh-pages-temp
 git rm -rf --cached . 2>/dev/null || true
+# 关键: .nojekyll 让 GitHub Pages 不跑 Jekyll (否则 build 一直 errored)
+touch .nojekyll
+chmod -R u+w . 2>/dev/null || true
 rm -rf node_modules .gitignore .npmrc package.json package-lock.json \
        tsconfig.json vite.config.ts src public index.html .github README.md \
        pnpm-workspace.yaml deploy.sh deploy.log
