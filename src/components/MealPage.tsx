@@ -151,6 +151,10 @@ function OcrModal({ onClose }: { onClose: () => void }) {
       clearInterval(timer)
       await worker.terminate()
       const text = (data.text || '').trim()
+      if (!text) {
+        setProgressLabel('未识别到文字,试试手输或换张更清晰的图')
+        return
+      }
       setManualText(text)
       parseText(text)
     } catch (err) {
@@ -166,7 +170,9 @@ function OcrModal({ onClose }: { onClose: () => void }) {
     for (const line of lines) {
       const match = line.match(/^(.+?)\s*(\d+)?g?$/i)
       if (!match) continue
-      const name = match[1].trim()
+      const raw = match[1]
+      const name = (raw || '').trim()
+      if (!name) continue  // 跳过空行
       items.push(name)
       const results = fuzzyMatch(name)
       cands.push(results[0] || { food: name, kcal: 0, score: 0 })
@@ -273,19 +279,20 @@ function OcrModal({ onClose }: { onClose: () => void }) {
           <>
             <p style={{ fontSize: 13 }}>识别到 {recognized.length} 项,逐个确认:</p>
             {recognized.map((name, idx) => {
-              const info = lookupKcal(name)
-              const cur = picked[idx] || { food: name, grams: 100, kcal: 0 }
+              const safeName = name || '(空)'
+              const info = lookupKcal(safeName)
+              const cur = picked[idx] || { food: safeName, grams: 100, kcal: 0 }
               return (
                 <div key={idx} style={{ borderBottom: '1px solid var(--line)', padding: '8px 0' }}>
-                  <div style={{ fontSize: 13, marginBottom: 4 }}>原文: <b>{name}</b></div>
+                  <div style={{ fontSize: 13, marginBottom: 4 }}>原文: <b>{safeName}</b></div>
                   {info ? (
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 13 }}>→ {name}</span>
+                      <span style={{ fontSize: 13 }}>→ {safeName}</span>
                       <input type="number" defaultValue={cur.grams} style={{ width: 80 }} onChange={e => {
                         const g = +e.target.value || 0
                         setPicked(p => {
                           const cp = [...p]
-                          cp[idx] = { food: name, grams: g, kcal: Math.round(info.kcal * g / 100) }
+                          cp[idx] = { food: safeName, grams: g, kcal: Math.round(info.kcal * g / 100) }
                           return cp
                         })
                       }} />
@@ -296,11 +303,11 @@ function OcrModal({ onClose }: { onClose: () => void }) {
                     </div>
                   ) : (
                     <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                      库里没找到 "{name}",可手动改名
+                      库里没找到 "{safeName}",可手动改名
                       <input
                         type="text"
                         style={{ width: '100%', marginTop: 4, boxSizing: 'border-box' }}
-                        defaultValue={name}
+                        defaultValue={safeName}
                         onChange={e => {
                           const newName = e.target.value
                           const newInfo = lookupKcal(newName)
