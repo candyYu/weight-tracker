@@ -109,17 +109,47 @@ function ManualMealModal({ onClose }: { onClose: () => void }) {
 }
 
 function OcrModal({ onClose }: { onClose: () => void }) {
+  const [step, setStep] = useState<'pick' | 'confirm'>('pick')
   const [recognized, setRecognized] = useState<string[]>([])
   const [candidates, setCandidates] = useState<Array<{ food: string; kcal: number; score: number }>>([])
-  const [step, setStep] = useState<'pick' | 'confirm'>('pick')
   const [picked, setPicked] = useState<Array<{ food: string; grams: number; kcal: number }>>([])
 
-  // 简化 OCR: 用户手输或粘贴图片中的文字 (浏览器内 Tesseract.js 太重, MVP 暂用手动输入)
-  // 这里留了 hook 让用户输入,实际等同于"快速手动"
-  const [text, setText] = useState('')
+  // OCR 状态
+  const [imgUrl, setImgUrl] = useState<string | null>(null)
+  const [progress, setProgress] = useState<number>(0)
+  const [progressLabel, setProgressLabel] = useState<string>('')
+  const [manualText, setManualText] = useState<string>('')
 
-  function parse() {
-    // 简单分行:每行 "食物 克数",例: "米饭 200g"
+  async function handleFile(file: File) {
+    const url = URL.createObjectURL(file)
+    setImgUrl(url)
+    setProgressLabel('加载识别引擎...')
+    setProgress(0)
+    try {
+      const { createWorker } = await import('tesseract.js')
+      const worker = await createWorker(['chi_sim', 'eng'], 1, {
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            const p = Math.round(m.progress * 100)
+            setProgress(p)
+            setProgressLabel(`识别中 ${p}%`)
+          } else {
+            setProgressLabel(translateStatus(m.status))
+          }
+        },
+      })
+      setProgressLabel('识别中...')
+      const { data } = await worker.recognize(url)
+      await worker.terminate()
+      const text = (data.text || '').trim()
+      setManualText(text)
+      parseText(text)
+    } catch (err) {
+      setProgressLabel('识别失败: ' + (err as Error).message)
+    }
+  }
+
+  function parseText(text: string) {
     const lines = text.split(/[\n,，]/).map(l => l.trim()).filter(Boolean)
     const items: string[] = []
     const cands: Array<{ food: string; kcal: number; score: number }> = []
@@ -129,11 +159,20 @@ function OcrModal({ onClose }: { onClose: () => void }) {
       const name = match[1].trim()
       items.push(name)
       const results = fuzzyMatch(name)
-      if (results.length) cands.push(results[0])
+      cands.push(results[0] || { food: name, kcal: 0, score: 0 })
     }
     setRecognized(items)
     setCandidates(cands)
+    // 初始化 picked 默认 100g
+    setPicked(items.map(name => {
+      const info = lookupKcal(name)
+      return { food: name, grams: 100, kcal: info ? info.kcal : 0 }
+    }))
     setStep('confirm')
+  }
+
+  function reparse() {
+    if (manualText.trim()) parseText(manualText)
   }
 
   async function save() {
@@ -147,6 +186,7 @@ function OcrModal({ onClose }: { onClose: () => void }) {
       source: 'ocr',
       createdAt: Date.now(),
     })
+    if (imgUrl) URL.revokeObjectURL(imgUrl)
     onClose()
   }
 
@@ -157,33 +197,82 @@ function OcrModal({ onClose }: { onClose: () => void }) {
         {step === 'pick' && (
           <>
             <p style={{ fontSize: 13, color: 'var(--muted)' }}>
-              把你看到/拍到的食物名称按行输入,后接克数(可省略,默认 100g)。
-              例:<br />
-              米饭 200g<br />
-              西红柿炒蛋 150g
+              拍食物标签/包装上的字,或从相册选,App 会本机识别并匹配食物库。
+              拍不清可直接粘贴/输入文字。
             </p>
-            <label>食物列表</label>
-            <textarea rows={5} value={text} onChange={e => setText(e.target.value)} placeholder="米饭 200g&#10;苹果" autoFocus />
-            <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
-              📌 二期:接入 Tesseract.js 拍照自动识别文字。当前版本手动输入更准。
-            </p>
-            <button className="btn" style={{ marginTop: 12 }} onClick={parse}>解析</button>
+
+            <div style={{ display: 'flex', gap: 8, margin: '12px 0' }}>
+              <label className="btn" style={{ flex: 1, margin: 0 }}>
+                📷 拍照
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  style={{ display: 'none' }}
+                  onChange={e => {
+                    const f = e.target.files?.[0]
+                    if (f) handleFile(f)
+                  }}
+                />
+              </label>
+              <label className="btn secondary" style={{ flex: 1, margin: 0 }}>
+                🖼️ 相册
+                <input
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={e => {
+                    const f = e.target.files?.[0]
+                    if (f) handleFile(f)
+                  }}
+                />
+              </label>
+            </div>
+
+            {imgUrl && progressLabel && (
+              <div style={{ margin: '12px 0', padding: 10, background: 'var(--bg)', borderRadius: 8 }}>
+                <img src={imgUrl} alt="待识别" style={{ width: '100%', maxHeight: 180, objectFit: 'contain', borderRadius: 6, marginBottom: 8 }} />
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>{progressLabel}</div>
+                {progress > 0 && progress < 100 && (
+                  <div style={{ height: 4, background: 'var(--line)', borderRadius: 2, marginTop: 6, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${progress}%`, background: 'var(--pink)', transition: 'width 0.2s' }} />
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0', fontSize: 12, color: 'var(--muted)' }}>
+              <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
+              <span>或手输文字</span>
+              <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
+            </div>
+
+            <textarea
+              rows={4}
+              value={manualText}
+              onChange={e => setManualText(e.target.value)}
+              placeholder="米饭 200g&#10;苹果&#10;西红柿炒蛋 150g"
+              style={{ width: '100%', boxSizing: 'border-box' }}
+            />
+            <button className="btn" style={{ marginTop: 12, width: '100%' }} onClick={reparse}>
+              解析
+            </button>
           </>
         )}
         {step === 'confirm' && (
           <>
             <p style={{ fontSize: 13 }}>识别到 {recognized.length} 项,逐个确认:</p>
             {recognized.map((name, idx) => {
-              const top = candidates[idx]
               const info = lookupKcal(name)
+              const cur = picked[idx] || { food: name, grams: 100, kcal: 0 }
               return (
                 <div key={idx} style={{ borderBottom: '1px solid var(--line)', padding: '8px 0' }}>
                   <div style={{ fontSize: 13, marginBottom: 4 }}>原文: <b>{name}</b></div>
                   {info ? (
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: 13 }}>→ {name}</span>
-                      <input type="number" defaultValue={100} style={{ width: 80 }} onChange={e => {
-                        const g = +e.target.value
+                      <input type="number" defaultValue={cur.grams} style={{ width: 80 }} onChange={e => {
+                        const g = +e.target.value || 0
                         setPicked(p => {
                           const cp = [...p]
                           cp[idx] = { food: name, grams: g, kcal: Math.round(info.kcal * g / 100) }
@@ -192,21 +281,51 @@ function OcrModal({ onClose }: { onClose: () => void }) {
                       }} />
                       <span style={{ fontSize: 12, color: 'var(--muted)' }}>g</span>
                       <span style={{ fontSize: 13, color: 'var(--pink-deep)', marginLeft: 'auto' }}>
-                        {Math.round(info.kcal * (picked[idx]?.grams ?? 100) / 100)} kcal
+                        {cur.kcal} kcal
                       </span>
                     </div>
                   ) : (
                     <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                      库里没找到 ({top ? `最像: ${top.food}` : '无候选'}),跳过
+                      库里没找到 "{name}",可手动改名
+                      <input
+                        type="text"
+                        style={{ width: '100%', marginTop: 4, boxSizing: 'border-box' }}
+                        defaultValue={name}
+                        onChange={e => {
+                          const newName = e.target.value
+                          const newInfo = lookupKcal(newName)
+                          setPicked(p => {
+                            const cp = [...p]
+                            cp[idx] = { food: newName, grams: cur.grams, kcal: newInfo ? Math.round(newInfo.kcal * cur.grams / 100) : 0 }
+                            return cp
+                          })
+                        }}
+                      />
                     </div>
                   )}
                 </div>
               )
             })}
-            <button className="btn" style={{ marginTop: 16 }} onClick={save}>保存全部</button>
+            <button className="btn" style={{ marginTop: 16, width: '100%' }} onClick={save} disabled={picked.length === 0}>
+              保存到今日
+            </button>
+            <button className="btn secondary" style={{ marginTop: 8, width: '100%' }} onClick={() => setStep('pick')}>
+              ← 重新识别
+            </button>
           </>
         )}
       </div>
     </div>
   )
+}
+
+function translateStatus(s: string): string {
+  const map: Record<string, string> = {
+    'loading tesseract core': '加载识别引擎...',
+    'initializing tesseract': '初始化...',
+    'loading language traineddata': '下载中文模型 (首次 5MB)...',
+    'initializing api': '准备 API...',
+    'recognizing text': '识别中...',
+  }
+  return map[s] || s
 }
