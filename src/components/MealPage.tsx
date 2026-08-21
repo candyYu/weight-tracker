@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db'
 import { fuzzyMatch, lookupKcal } from '../foods'
+import VisionModal from './VisionModal'
 
 const MEAL_LABEL: Record<string, string> = {
   breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐',
@@ -12,6 +13,7 @@ export default function MealPage() {
   const meals = useLiveQuery(() => db.meals.where('date').equals(today).toArray(), [today]) ?? []
   const [showAdd, setShowAdd] = useState(false)
   const [showOcr, setShowOcr] = useState(false)
+  const [showVision, setShowVision] = useState(false)
 
   const todayKcal = meals.reduce((s, m) => s + m.totalKcal, 0)
 
@@ -34,6 +36,7 @@ export default function MealPage() {
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         <button className="btn" onClick={() => setShowAdd(true)}>+ 手动记录</button>
         <button className="btn secondary" onClick={() => setShowOcr(true)}>📷 OCR 识别</button>
+        <button className="btn secondary" onClick={() => setShowVision(true)}>🤖 AI 视觉</button>
       </div>
 
       <div className="card">
@@ -62,6 +65,7 @@ export default function MealPage() {
 
       {showAdd && <ManualMealModal onClose={() => setShowAdd(false)} />}
       {showOcr && <OcrModal onClose={() => setShowOcr(false)} />}
+      {showVision && <VisionModal onClose={() => setShowVision(false)} date={today} onSaved={() => setShowVision(false)} />}
     </>
   )
 }
